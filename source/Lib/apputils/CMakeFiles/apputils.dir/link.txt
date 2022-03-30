@@ -1,0 +1,2 @@
+"/usr/bin/gcc-ar-8" cr ../../../lib/release-static/libapputils.a CMakeFiles/apputils.dir/ParseArg.cpp.o CMakeFiles/apputils.dir/VVEncAppCfg.cpp.o CMakeFiles/apputils.dir/YuvFileIO.cpp.o
+"/usr/bin/gcc-ranlib-8" ../../../lib/release-static/libapputils.a
