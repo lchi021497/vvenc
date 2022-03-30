@@ -1,0 +1,1 @@
+/usr/bin/c++  -DTARGET_SIMD_X86 -O3 -DNDEBUG -flto -fno-fat-lto-objects -flto CMakeFiles/vvencFFapp.dir/EncApp.cpp.o CMakeFiles/vvencFFapp.dir/encmain.cpp.o -o ../../../bin/release-static/vvencFFapp  ../../../lib/release-static/libvvenc.a ../../../lib/release-static/libapputils.a -lpthread 

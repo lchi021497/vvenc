@@ -343,7 +343,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_inputBitDepth[0]                        =8;             ///< bit-depth of input
   c->m_inputBitDepth[1]                        =0;
 
-  c->m_numThreads                              = 0;             ///< number of worker threads
+  c->m_numThreads                              = 1;             ///< number of worker threads
 
   c->m_QP                                      = 32;            ///< QP value of key-picture (integer)
   c->m_RCTargetBitrate                         = 0;
@@ -2179,8 +2179,8 @@ static bool checkCfgParameter( vvenc_config *c )
 
   vvenc_confirmParameter( c, (c->m_HdrMode != VVENC_HDR_OFF && c->m_internalBitDepth[0] < 10 )     ,       "InternalBitDepth must be at least 10 bit for HDR");
   vvenc_confirmParameter( c, (c->m_HdrMode != VVENC_HDR_OFF && c->m_internChromaFormat != VVENC_CHROMA_420 ) ,"ChromaFormatIDC must be YCbCr 4:2:0 for HDR");
-  vvenc_confirmParameter( c, (c->m_contentLightLevel[0] < 0 || c->m_contentLightLevel[0] > 10000),  "max content light level must 0 <= cll <= 10000 ");
-  vvenc_confirmParameter( c, (c->m_contentLightLevel[1] < 0 || c->m_contentLightLevel[1] > 10000),  "max average content light level must 0 <= cll <= 10000 ");
+  vvenc_confirmParameter( c, (c->m_contentLightLevel[0] > 10000),  "max content light level must 0 <= cll <= 10000 ");
+  vvenc_confirmParameter( c, (c->m_contentLightLevel[1] > 10000),  "max average content light level must 0 <= cll <= 10000 ");
 
   {
     bool outOfRGBRange = false;
@@ -2917,7 +2917,7 @@ VVENC_DECL int vvenc_init_default( vvenc_config *c, int width, int height, int f
 
   c->m_RCTargetBitrate     = targetbitrate;            // target bitrate in bps
 
-  c->m_numThreads          = -1;                       // number of worker threads (-1: auto, 0: off, else set worker threads)
+  c->m_numThreads          = 1;                       // number of worker threads (-1: auto, 0: off, else set worker threads)
 
   iRet = vvenc_init_preset(c, preset );
   return iRet;
