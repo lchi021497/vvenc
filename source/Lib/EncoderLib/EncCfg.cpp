@@ -39,5 +39,31 @@ POSSIBILITY OF SUCH DAMAGE.
 
 
 ------------------------------------------------------------------------------------------- */
+/** \file     EncCfg.cpp
+    \brief    encoder internal configuration class
+*/
 
-#include "../LoopFilterX86.h"
+
+#include "EncCfg.h"
+
+namespace vvenc {
+
+VVEncCfg::VVEncCfg()
+  : m_stageParallelProc( false )
+{
+}
+
+VVEncCfg& VVEncCfg::operator= ( const vvenc_config& extern_cfg )
+{
+  *((vvenc_config*)this) = extern_cfg;
+  xInitCfgMembers();
+  return *this;
+}
+
+void VVEncCfg::xInitCfgMembers()
+{
+  m_stageParallelProc = m_numThreads > 0 && m_LookAhead;
+}
+
+}
+

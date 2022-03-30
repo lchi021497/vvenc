@@ -1,45 +1,41 @@
 /* -----------------------------------------------------------------------------
-The copyright in this software is being made available under the BSD
+The copyright in this software is being made available under the Clear BSD
 License, included below. No patent rights, trademark rights and/or 
 other Intellectual Property Rights other than the copyrights concerning 
 the Software are granted under this license.
 
-For any license concerning other Intellectual Property rights than the software,
-especially patent licenses, a separate Agreement needs to be closed. 
-For more information please contact:
+The Clear BSD License
 
-Fraunhofer Heinrich Hertz Institute
-Einsteinufer 37
-10587 Berlin, Germany
-www.hhi.fraunhofer.de/vvc
-vvc@hhi.fraunhofer.de
-
-Copyright (c) 2019-2022, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V.
+Copyright (c) 2019-2022, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Redistribution and use in source and binary forms, with or without modification,
+are permitted (subject to the limitations in the disclaimer below) provided that
+the following conditions are met:
 
- * Redistributions of source code must retain the above copyright notice,
-   this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
- * Neither the name of Fraunhofer nor the names of its contributors may
-   be used to endorse or promote products derived from this software without
-   specific prior written permission.
+     * Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
-BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
-THE POSSIBILITY OF SUCH DAMAGE.
+     * Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in the
+     documentation and/or other materials provided with the distribution.
+
+     * Neither the name of the copyright holder nor the names of its
+     contributors may be used to endorse or promote products derived from this
+     software without specific prior written permission.
+
+NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
 
 
 ------------------------------------------------------------------------------------------- */
@@ -78,9 +74,12 @@ EncLib::EncLib( MsgLog& logger )
   , m_MCTF           ( nullptr )
   , m_preEncoder     ( nullptr )
   , m_gopEncoder     ( nullptr )
+  , m_prevSharedTL0  ( nullptr )
   , m_threadPool     ( nullptr )
   , m_picsRcvd       ( 0 )
   , m_passInitialized( -1 )
+  , m_maxNumPicShared( MAX_INT )
+  , m_anyAuDone      ( false )
 {
 }
 
@@ -103,7 +102,7 @@ void EncLib::setRecYUVBufferCallback( void* ctx, vvencRecYUVBufferCallback func 
   }
 }
 
-void EncLib::initEncoderLib( const VVEncCfg& encCfg )
+void EncLib::initEncoderLib( const vvenc_config& encCfg )
 {
   // copy config parameter
   const_cast<VVEncCfg&>(m_encCfg) = encCfg;
@@ -213,16 +212,17 @@ void EncLib::initPass( int pass, const char* statsFName )
   {
     m_threadPool = new NoMallocThreadPool( m_encCfg.m_numThreads, "EncSliceThreadPool", &m_encCfg );
   }
-
+  m_maxNumPicShared = 0;
   // MCTF
   if( m_encCfg.m_vvencMCTF.MCTF )
   {
     m_MCTF = new MCTF();
-    //m_MCTF->initStage( MCTF_ADD_QUEUE_DELAY, true, true, m_encCfg.m_CTUSize );
-    const int minDelay = m_encCfg.m_vvencMCTF.MCTFFutureReference ? ( m_encCfg.m_vvencMCTF.MCTFNumLeadFrames + 1 + VVENC_MCTF_RANGE ) : ( m_encCfg.m_vvencMCTF.MCTFNumLeadFrames + 1 );
+    const int leadFrames = std::min( VVENC_MCTF_RANGE, m_encCfg.m_leadFrames );
+    const int minDelay   = m_encCfg.m_vvencMCTF.MCTFFutureReference ? ( leadFrames + 1 + VVENC_MCTF_RANGE ) : ( leadFrames + 1 );
     m_MCTF->initStage( minDelay, true, true, m_encCfg.m_CTUSize );
     m_MCTF->init( m_encCfg, m_threadPool );
     m_encStages.push_back( m_MCTF );
+    m_maxNumPicShared += minDelay;
   }
 
   // pre analysis encoder
@@ -232,12 +232,15 @@ void EncLib::initPass( int pass, const char* statsFName )
     m_preEncoder->initStage( m_firstPassCfg.m_GOPSize + 1, true, false, m_firstPassCfg.m_CTUSize );
     m_preEncoder->init( m_firstPassCfg, *m_rateCtrl, m_threadPool, true );
     m_encStages.push_back( m_preEncoder );
+    m_maxNumPicShared += m_firstPassCfg.m_GOPSize + 1 + Log2(m_firstPassCfg.m_GOPSize) + 2;
   }
 
   // gop encoder
   m_gopEncoder = new EncGOP( msg );
-  m_gopEncoder->initStage( m_encCfg.m_GOPSize + 1, false, false, m_encCfg.m_CTUSize );
+  m_gopEncoder->initStage( m_encCfg.m_GOPSize + 1, false, false, m_encCfg.m_CTUSize, m_encCfg.m_stageParallelProc );
   m_gopEncoder->init( m_encCfg, *m_rateCtrl, m_threadPool, false );
+  m_maxNumPicShared += m_encCfg.m_GOPSize + 1 + Log2(m_encCfg.m_GOPSize) + 2;
+
   if( m_rateCtrl->rcIsFinalPass )
   {
     m_gopEncoder->setRecYUVBufferCallback( m_recYuvBufCtx, m_recYuvBufFunc );
@@ -265,13 +268,21 @@ void EncLib::initPass( int pass, const char* statsFName )
   {
     m_prevSharedQueue.push_back( nullptr );
   }
+  m_prevSharedTL0 = nullptr;
 
-  m_picsRcvd        = m_encCfg.m_vvencMCTF.MCTF ? -m_encCfg.m_vvencMCTF.MCTFNumLeadFrames : 0;
+  m_picsRcvd        = -m_encCfg.m_leadFrames;
+  m_anyAuDone       = false;
   m_passInitialized = pass;
 }
 
 void EncLib::xUninitLib()
 {
+  // make sure all processing threads are stopped before releasing data
+  if( m_threadPool )
+  {
+    m_threadPool->shutdown( true );
+  }
+
   // sub modules
   if( m_rateCtrl != nullptr )
   {
@@ -295,6 +306,11 @@ void EncLib::xUninitLib()
   m_encStages.clear();
 
   // shared data
+  if( m_prevSharedTL0 )
+  {
+    m_prevSharedTL0->decUsed();
+    m_prevSharedTL0 = nullptr;
+  }
   for( auto picShared : m_picSharedList )
   {
     delete picShared;
@@ -305,7 +321,6 @@ void EncLib::xUninitLib()
   // thread pool
   if( m_threadPool )
   {
-    m_threadPool->shutdown( true );
     delete m_threadPool;
     m_threadPool = nullptr;
   }
@@ -350,31 +365,92 @@ void EncLib::encodePicture( bool flush, const vvencYUVBuffer* yuvInBuf, AccessUn
 
   CHECK( yuvInBuf == nullptr && ! flush, "no input picture given" );
 
+  const int firstPoc = m_encCfg.m_vvencMCTF.MCTF ? -std::min( VVENC_MCTF_RANGE, m_encCfg.m_leadFrames ) : 0;
+
   // clear output access unit
   au.clearAu();
 
-  // send new YUV input buffer to first encoder stage
-  if( yuvInBuf )
+  // NOTE regarding the stage parallel processing
+  // The next input yuv-frame must be passed to the encoding process (1.Stage).
+  // Following should be considered:
+  // 1. The final stage is non-blocking, so it dosen't wait until picture is reconstructed.
+  // 2. Generally the stages have different throughput, last stage is the slowest.
+  // 3. The number of picture-units, required for the input frames, is limited.
+  // 4. Due to chunk-mode and non-blockiness, it's possible that we can run out of picture-units.
+  // 5. Then we have to wait for the next available picture-unit and the input frame can be passed to the 1.stage.
+
+  PicShared* picShared = nullptr;
+  bool inputPending    = ( yuvInBuf != nullptr );
+  while( true )
   {
-    PicShared* picShared = xGetFreePicShared();
-    picShared->reuse( m_picsRcvd, yuvInBuf );
-    if (m_encCfg.m_usePerceptQPA || m_encCfg.m_RCNumPasses == 2 || (m_encCfg.m_LookAhead && m_rateCtrl->m_pcEncCfg->m_RCTargetBitrate) )
+    // send new YUV input buffer to first encoder stage
+    if( inputPending )
     {
-      xAssignPrevQpaBufs( picShared );
+      picShared = xGetFreePicShared();
+      if( picShared )
+      {
+        picShared->reuse( m_picsRcvd, yuvInBuf );
+        if( m_encCfg.m_sliceTypeAdapt
+            || m_encCfg.m_usePerceptQPA
+            || m_encCfg.m_RCNumPasses == 2
+            || ( m_encCfg.m_LookAhead && m_rateCtrl->m_pcEncCfg->m_RCTargetBitrate ) )
+        {
+          xAssignPrevQpaBufs( picShared );
+        }
+        if( ! picShared->isLeadTrail() )
+        {
+          xDetectScc( picShared );
+        }
+        if( picShared->getPOC() >= firstPoc )
+        {
+          m_encStages[ 0 ]->addPicSorted( picShared );
+        }
+        m_picsRcvd  += 1;
+        inputPending = false;
+      }
     }
-    xDetectScc( picShared );
-    m_encStages[ 0 ]->addPicSorted( picShared );
-    m_picsRcvd += 1;
+
+    PROFILER_EXT_UPDATE( g_timeProfiler, P_TOP_LEVEL, pic->TLayer );
+
+    // trigger stages
+    isQueueEmpty = m_picsRcvd > firstPoc || ( m_picsRcvd <= firstPoc && flush );
+    for( auto encStage : m_encStages )
+    {
+      encStage->runStage( flush, au );
+      isQueueEmpty &= encStage->isStageDone();
+    }
+
+    if( !au.empty() )
+    {
+      m_AuList.push_back( au );
+      au.detachNalUnitList();
+      au.clearAu();
+      m_anyAuDone = true;
+    }
+
+    // wait if input picture hasn't been stored yet or if encoding is running and no new output access unit has been encoded
+    bool waitAndStay = inputPending || ( m_AuList.empty() && ! isQueueEmpty && ( m_anyAuDone || flush ) );
+    if( ! waitAndStay )
+    {
+      break;
+    }
+
+    if( m_encCfg.m_numThreads > 0 )
+    {
+      for( auto encStage : m_encStages )
+      {
+        if( encStage->isNonBlocking() )
+          encStage->waitForFreeEncoders();
+      }
+    }
   }
 
-  PROFILER_EXT_UPDATE( g_timeProfiler, P_TOP_LEVEL, pic->TLayer );
-
-  // trigger stages
-  isQueueEmpty = true;
-  for( auto encStage : m_encStages )
+  // check if we have an AU to output
+  if( !m_AuList.empty() )
   {
-    encStage->runStage( flush, au );
-    isQueueEmpty &= encStage->isStageDone();
+    au = m_AuList.front();
+    m_AuList.front().detachNalUnitList();
+    m_AuList.pop_front();
   }
 
   // reset output access unit, if not final pass
@@ -418,6 +494,9 @@ PicShared* EncLib::xGetFreePicShared()
 
   if( ! picShared )
   {
+    if( m_encCfg.m_stageParallelProc && ( m_picSharedList.size() >= m_maxNumPicShared ) )
+      return nullptr;
+
     picShared = new PicShared();
     picShared->create( m_encCfg.m_framesToBeEncoded, m_encCfg.m_internChromaFormat, Size( m_encCfg.m_PadSourceWidth, m_encCfg.m_PadSourceHeight ), m_encCfg.m_vvencMCTF.MCTF );
     m_picSharedList.push_back( picShared );
@@ -439,6 +518,22 @@ void EncLib::xAssignPrevQpaBufs( PicShared* picShared )
   if( picShared->m_prevShared[ 0 ] == nullptr )
   {
     picShared->m_prevShared[ 0 ] = picShared;
+  }
+
+  if( m_encCfg.m_sliceTypeAdapt )
+  {
+    const int idr2Adj = m_encCfg.m_DecodingRefreshType == VVENC_DRT_IDR2 ? 1 : 0;
+
+    if( ( picShared->getPOC() + idr2Adj ) % m_encCfg.m_GOPSize == 0 )
+    {
+      if( m_prevSharedTL0 )
+      {
+        m_prevSharedTL0->decUsed();
+      }
+      picShared->m_prevShared[ PREV_FRAME_TL0 ] = m_prevSharedTL0;
+      m_prevSharedTL0 = picShared;
+      m_prevSharedTL0->incUsed();
+    }
   }
 }
 
