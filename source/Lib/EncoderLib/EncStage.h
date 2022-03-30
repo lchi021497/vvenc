@@ -1,45 +1,41 @@
 /* -----------------------------------------------------------------------------
-The copyright in this software is being made available under the BSD
+The copyright in this software is being made available under the Clear BSD
 License, included below. No patent rights, trademark rights and/or 
 other Intellectual Property Rights other than the copyrights concerning 
 the Software are granted under this license.
 
-For any license concerning other Intellectual Property rights than the software,
-especially patent licenses, a separate Agreement needs to be closed. 
-For more information please contact:
+The Clear BSD License
 
-Fraunhofer Heinrich Hertz Institute
-Einsteinufer 37
-10587 Berlin, Germany
-www.hhi.fraunhofer.de/vvc
-vvc@hhi.fraunhofer.de
-
-Copyright (c) 2019-2022, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V.
+Copyright (c) 2019-2022, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Redistribution and use in source and binary forms, with or without modification,
+are permitted (subject to the limitations in the disclaimer below) provided that
+the following conditions are met:
 
- * Redistributions of source code must retain the above copyright notice,
-   this list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
- * Neither the name of Fraunhofer nor the names of its contributors may
-   be used to endorse or promote products derived from this software without
-   specific prior written permission.
+     * Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
-BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
-THE POSSIBILITY OF SUCH DAMAGE.
+     * Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in the
+     documentation and/or other materials provided with the distribution.
+
+     * Neither the name of the copyright holder nor the names of its
+     contributors may be used to endorse or promote products derived from this
+     software without specific prior written permission.
+
+NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
 
 
 ------------------------------------------------------------------------------------------- */
@@ -73,13 +69,16 @@ public:
   , m_isTrail    ( false )
   , m_ctsValid   ( false )
   {
-    std::fill_n( m_prevShared, QPA_PREV_FRAMES, nullptr );
+    std::fill_n( m_prevShared, NUM_PREV_FRAMES, nullptr );
   };
 
   ~PicShared() {};
 
   bool         isUsed()          const { return m_refCount > 0; }
+  void         incUsed()               { m_refCount += 1; }
+  void         decUsed()               { CHECK( m_refCount <= 0, "release unused picture" ); if( m_refCount > 0 ) m_refCount -= 1; }
   bool         isLeadTrail()     const { return m_isLead || m_isTrail; }
+  int          getPOC()          const { return m_poc; }
   ChromaFormat getChromaFormat() const { return m_origBuf.chromaFormat; }
   Size         getLumaSize()     const { return m_origBuf.Y(); }
 
@@ -109,13 +108,13 @@ public:
     m_isLead      = poc < 0;
     m_isTrail     = m_maxFrames > 0 && poc >= m_maxFrames;
     m_ctsValid    = yuvInBuf->ctsValid;
-    std::fill_n( m_prevShared, QPA_PREV_FRAMES, nullptr );
+    std::fill_n( m_prevShared, NUM_PREV_FRAMES, nullptr );
   }
 
   void shareData( Picture* pic )
   {
-    PelStorage* prevOrigBufs[ QPA_PREV_FRAMES ];
-    for( int i = 0; i < QPA_PREV_FRAMES; i++ )
+    PelStorage* prevOrigBufs[ NUM_PREV_FRAMES ];
+    for( int i = 0; i < NUM_PREV_FRAMES; i++ )
     {
       prevOrigBufs[ i ] = sharePrevOrigBuffer( i );
     }
@@ -131,7 +130,7 @@ public:
   void releaseShared( Picture* pic )
   {
     pic->releaseSharedBuffers();
-    for( int i = 0; i < QPA_PREV_FRAMES; i++ )
+    for( int i = 0; i < NUM_PREV_FRAMES; i++ )
     {
       releasePrevOrigBuffer( i );
     }
@@ -142,7 +141,7 @@ public:
 private:
   PelStorage* sharePrevOrigBuffer( int idx )
   {
-    CHECK( idx >= QPA_PREV_FRAMES, "array access out of bounds" );
+    CHECK( idx >= NUM_PREV_FRAMES, "array access out of bounds" );
     if( m_prevShared[ idx ] )
     {
       m_prevShared[ idx ]->m_refCount += 1;
@@ -153,7 +152,7 @@ private:
 
   void releasePrevOrigBuffer( int idx )
   {
-    CHECK( idx >= QPA_PREV_FRAMES, "array access out of bounds" );
+    CHECK( idx >= NUM_PREV_FRAMES, "array access out of bounds" );
     if( m_prevShared[ idx ] )
     {
       m_prevShared[ idx ]->m_refCount -= 1;
@@ -162,7 +161,7 @@ private:
   }
 
 public:
-  PicShared* m_prevShared[ QPA_PREV_FRAMES ];
+  PicShared* m_prevShared[ NUM_PREV_FRAMES ];
   bool       m_isSccWeak;
   bool       m_isSccStrong;
 
@@ -191,6 +190,8 @@ public:
   , m_flushAll        ( false )
   , m_processLeadTrail( false )
   , m_ctuSize         ( MAX_CU_SIZE )
+  , m_isNonBlocking   ( false )
+  , m_picCount        ( 0 )
   {
   };
 
@@ -217,12 +218,13 @@ public:
 
   bool isStageDone() const { return m_procList.empty(); }
 
-  void initStage( int minQueueSize, bool flushAll, bool processLeadTrail, int ctuSize )
+  void initStage( int minQueueSize, bool flushAll, bool processLeadTrail, int ctuSize, bool nonBlocking = false )
   {
     m_minQueueSize     = minQueueSize;
     m_flushAll         = flushAll;
     m_processLeadTrail = processLeadTrail;
     m_ctuSize          = ctuSize;
+    m_isNonBlocking    = nonBlocking;
   }
 
   void linkNextStage( EncStage* nextStage )
@@ -262,6 +264,9 @@ public:
     pic->reset();
     picShared->shareData( pic );
 
+    // call first picture init
+    initPicture( pic );
+
     // sort picture into processing queue
     PicList::iterator picItr;
     for( picItr = m_procList.begin(); picItr != m_procList.end(); picItr++ )
@@ -270,9 +275,7 @@ public:
         break;
     }
     m_procList.insert( picItr, pic );
-
-    // call first picture init
-    initPicture( pic );
+    m_picCount++;
   }
 
   void runStage( bool flush, AccessUnitList& auList )
@@ -312,10 +315,11 @@ public:
     }
   }
 
+  bool         isNonBlocking()     { return m_isNonBlocking; }
+  virtual void waitForFreeEncoders()  {}
 protected:
   virtual void initPicture    ( Picture* pic ) = 0;
   virtual void processPictures( const PicList& picList, bool flush, AccessUnitList& auList, PicList& doneList, PicList& freeList ) = 0;
-
 private:
   EncStage* m_nextStage;
   PicList   m_procList;
@@ -324,6 +328,9 @@ private:
   bool      m_flushAll;
   bool      m_processLeadTrail;
   int       m_ctuSize;
+  bool      m_isNonBlocking;
+protected:
+  int64_t   m_picCount;
 };
 
 } // namespace vvenc
