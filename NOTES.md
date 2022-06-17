@@ -32,4 +32,5 @@ interval_debug.txt (tentative): source file lines attributed to each interval
 line_count.pkl: pickle of line count list for each basic block produced by ./scripts/line_count.py. This pickle file is used in the jupyter notebook heatmap vizualization
 
 
-
+To Run Heatmap in jupyter Notebook:
+  1. run `jupyter notebook`, make sure you have the output files in the right path.
