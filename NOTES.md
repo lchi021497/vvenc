@@ -7,7 +7,7 @@ Setup Steps:
 5. look under ./bball/fast/100000000 for output files 
 
 ** To run on ECE Cluster, replace `cmake` in Makefile with `/afs/ece.cmu.edu/class/ece643/software/xilinxVitis/petalinux/2020.2/sysroots/x86_64-petalinux-linux/usr/bin/cmake`
-   to use an up-to-date cmake
+   to use an up-to-date cmake. Run ./setup.sh script before running ./run_simpoint.sh
 
 Output files from run_simpoint.sh script
 
