@@ -6,6 +6,9 @@ Setup Steps:
 4. run `./run_simpoints.sh bball fast 100000000` as an example
 5. look under ./bball/fast/100000000 for output files 
 
+** To run on ECE Cluster, replace `cmake` in Makefile with `/afs/ece.cmu.edu/class/ece643/software/xilinxVitis/petalinux/2020.2/sysroots/x86_64-petalinux-linux/usr/bin/cmake`
+   to use an up-to-date cmake
+
 Output files from run_simpoint.sh script
 
 count.bb: Number of occurences of basic blocks in intervals (interval is tunable with third argument to run_simpoint script)
@@ -27,4 +30,6 @@ labels: Saves to the given file the label and distance to nearest centroid for e
 block_debug.txt: source file lines attributed to each basic blocks 
 interval_debug.txt (tentative): source file lines attributed to each interval
 line_count.pkl: pickle of line count list for each basic block produced by ./scripts/line_count.py. This pickle file is used in the jupyter notebook heatmap vizualization
+
+
 
