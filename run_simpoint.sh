@@ -4,7 +4,8 @@ if [ "$#" -ne 3 ]; then
 fi
 
 CURR=$(pwd)
-LLVM_SIMPOINT=/home/canna/LLVM-SimPoints
+LLVM_SIMPOINT=/home/canna/LLVM-SimPoints  # path to LLVM_Simpoint repo
+LLVM_TOOLS=$CURR/scripts
 
 cd $LLVM_SIMPOINT
 make clean
@@ -23,7 +24,7 @@ echo "linking with count.bc.."
 llvm-link-4.0 encLib.o  ./count.bc -o encoder_count.bc
 
 echo "running optimization pass.."
-# load libNumBlock to cound access # to code blocks
+# load libNumBlock to count access # to code blocks
 opt -load $LLVM_TOOLS/libNumBlocks.so -numBlocks < encoder_count.bc > encoder_count_renamed.bc
 llvm-dis encoder_count_renamed.bc
 
@@ -47,7 +48,9 @@ echo "running SimPoint.."
 $LLVM_SIMPOINT/SimPoint.3.2/bin/simpoint -maxK 30 -loadFVFile count.bb -saveSimpoints simpoints -saveSimpointWeights weights -saveLabels labels
 
 opt-4.0 -load ./scripts/libLineNumbers.so -intervalFile count.bb -lineNumbers < encoder_count_renamed.ll > /dev/null || echo "keep running.."
-python ./scripts/format.py count.bb > count.bb
+python ./scripts/format.py count.bb > count2.bb
+rm count.bb
+mv count2.bb count.bb
 python ./scripts/line_counts.py block_debug.txt 
 
 if [ ! -d "$1" ]; then
